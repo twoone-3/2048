@@ -12,6 +12,11 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+struct Position {
+    int i;
+    int j;
+};
+
 class MainWindow : public QMainWindow {
 	Q_OBJECT
 
@@ -19,17 +24,18 @@ public:
 		MainWindow(QWidget* parent = nullptr);
 	~MainWindow();
 	void startGame();
-	void CheckFailed();
+    void checkFailed();
+    void genNumber();
 
 protected:
 	void paintEvent(QPaintEvent* event);
 	void keyPressEvent(QKeyEvent* event);
 
 private:
-	void pressUp();
-	void pressDown();
-	void pressLeft();
-	void pressRight();
+	bool pressUp();
+	bool pressDown();
+	bool pressLeft();
+	bool pressRight();
 	Ui::MainWindow* ui;
 	int m_score;
 	int m_slots[4][4];
