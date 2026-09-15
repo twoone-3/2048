@@ -21,6 +21,12 @@ set(PROJECT_SOURCES
         mainwindow.ui
         gameboard.cpp
         gameboard.h
+        solver.cpp
+        solver.h
+        llmplayer.cpp
+        llmplayer.h
+        json.cpp
+        json.h
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
