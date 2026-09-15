@@ -24,6 +24,8 @@ class LlmPlayer : public QObject {
   void moveReady(GameBoard::Direction direction);
   // 需要提示用户的信息：接口未配置、请求失败、非法 JSON、非法按键等
   void warningShown(const QString& message);
+  // 记录请求和响应详情，供界面日志框展示
+  void logMessage(const QString& message);
 
  private:
   // —— 协议层 ——
