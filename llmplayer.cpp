@@ -1,6 +1,10 @@
 #include "llmplayer.h"
 #include "json.h"
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRandomGenerator>
+#include <QUrl>
 #include <cctype>
 #include <optional>
 #include <string>
@@ -32,22 +36,60 @@ GameBoard::Direction randomFallback() {
       return GameBoard::Direction::Right;
   }
 }
+// 剥离 Markdown 代码块等裹挟文本，只保留最外层 JSON 大括号
+std::string stripJsonShell(const std::string& text) {
+  const std::size_t firstBrace = text.find('{');
+  const std::size_t lastBrace = text.rfind('}');
+  if (firstBrace != std::string::npos && lastBrace != std::string::npos &&
+      firstBrace < lastBrace) {
+    return text.substr(firstBrace, lastBrace - firstBrace + 1);
+  }
+  return text;
+}
 }  // namespace
 
-LlmPlayer::LlmPlayer(QObject* parent) : QObject(parent) {}
+LlmPlayer::LlmPlayer(QObject* parent)
+    : QObject(parent), m_network(new QNetworkAccessManager(this)) {
+  // 默认接入 DeepSeek（OpenAI 兼容）；也可在界面里改成 GLM 等
+  m_url = qEnvironmentVariable("LLM_API_URL",
+                               "https://api.deepseek.com/chat/completions");
+  m_apiKey = qEnvironmentVariable("LLM_API_KEY");
+  m_model = qEnvironmentVariable("LLM_MODEL", "deepseek-chat");
+  connect(m_network, &QNetworkAccessManager::finished, this,
+          [this](QNetworkReply* reply) {
+            m_requestInFlight = false;
+            reply->deleteLater();
+            if (reply->error() != QNetworkReply::NoError) {
+              emit warningShown(
+                  QStringLiteral("LLM 请求失败：%1").arg(reply->errorString()));
+              return;
+            }
+            const std::string content =
+                extractContent(reply->readAll().toStdString());
+            if (content.empty()) {
+              emit warningShown(
+                  QStringLiteral("LLM 响应中没有可用内容，跳过本回合"));
+              return;
+            }
+            handleReplyText(content);
+          });
+}
+void LlmPlayer::setConfig(const QString& url, const QString& apiKey,
+                          const QString& model) {
+  m_url = url.trimmed();
+  m_apiKey = apiKey.trimmed();
+  m_model = model.trimmed();
+}
 
 void LlmPlayer::requestMove(const GameBoard& board) {
   if (m_requestInFlight) return;
-  const std::string payload = buildBoardPayload(board);
-  // 传输层未接入前只提示一次，避免反复刷屏
-  if (!m_transportWarned) {
-    m_transportWarned = true;
-    emit warningShown(
-        QStringLiteral("LLM 传输层尚未接入（待定 HTTP / "
-                       "本地文件），当前用占位回复走完整校验链路"));
+  if (m_apiKey.isEmpty()) {
+    emit warningShown(QStringLiteral(
+        "未配置 LLM 接口（请点击“LLM设置”填写 URL / Key / Model）"));
+    return;
   }
   m_requestInFlight = true;
-  sendRequest(payload);
+  sendRequest(buildBoardPayload(board));
 }
 
 std::string LlmPlayer::buildBoardPayload(const GameBoard& board) const {
@@ -61,21 +103,48 @@ std::string LlmPlayer::buildBoardPayload(const GameBoard& board) const {
   }
   root["grid"] = grid;
   root["score"] = json::Value(static_cast<double>(board.score()));
-  return root.dump(false, "");
+  return root.dump(true, "");
+}
+
+std::string LlmPlayer::buildRequestBody(const std::string& boardPayload) const {
+  json::Value root;
+  root["model"] = json::Value(m_model.toStdString());
+  root["temperature"] = json::Value(0.0);
+  json::Value messages;
+  json::Value system;
+  system["role"] = json::Value("system");
+  system["content"] = json::Value(
+      "你正在玩 2048 游戏。我会给你当前棋盘 JSON，请只输出一步移动，格式为严格 "
+      "JSON："
+      "{\"move\": \"left\"}。move 只能是 up / down / left / right "
+      "之一，不要输出任何其他文字。");
+  messages.append(system);
+  json::Value user;
+  user["role"] = json::Value("user");
+  user["content"] = json::Value(boardPayload);
+  messages.append(user);
+  root["messages"] = messages;
+  return root.dump(true, "");
+}
+
+std::string LlmPlayer::extractContent(const std::string& replyText) const {
+  json::Value root;
+  json::Reader reader;
+  if (!reader.parse(stripJsonShell(replyText), root) || !root.isObject())
+    return {};
+  json::Value choices = root["choices"];
+  if (!choices.isArray() || choices.size() == 0) return {};
+  json::Value message = choices[0]["message"];
+  if (!message.isObject()) return {};
+  json::Value content = message["content"];
+  if (!content.isString()) return {};
+  return content.asString();
 }
 
 GameBoard::Direction LlmPlayer::parseAndValidate(const std::string& replyText) {
-  // 剥离 ```json ... ``` 等裹挟文本，只保留最外层 JSON 大括号
-  std::string text = replyText;
-  const std::size_t firstBrace = text.find('{');
-  const std::size_t lastBrace = text.rfind('}');
-  if (firstBrace != std::string::npos && lastBrace != std::string::npos &&
-      firstBrace < lastBrace) {
-    text = text.substr(firstBrace, lastBrace - firstBrace + 1);
-  }
   json::Value root;
   json::Reader reader;
-  if (!reader.parse(text, root) || !root.isObject()) {
+  if (!reader.parse(stripJsonShell(replyText), root) || !root.isObject()) {
     emit warningShown(QStringLiteral("模型回复不是合法 JSON，已随机回退一步"));
     return randomFallback();
   }
@@ -102,8 +171,10 @@ void LlmPlayer::handleReplyText(const std::string& replyText) {
 }
 
 void LlmPlayer::sendRequest(const std::string& payload) {
-  // TODO: 接入待定的传输方式（OpenAI 兼容 HTTP 或本地 JSON 文件）。
-  // 当前占位：把一条固定合法回复喂给校验链路，便于先行联调整条管线。
-  Q_UNUSED(payload);
-  handleReplyText("{\"move\": \"left\"}");
+  QNetworkRequest request{QUrl(m_url)};
+  request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+  request.setRawHeader("Authorization", "Bearer " + m_apiKey.toUtf8());
+  QNetworkReply* reply = m_network->post(
+      request, QByteArray::fromStdString(buildRequestBody(payload)));
+  request.setTransferTimeout(30000);
 }

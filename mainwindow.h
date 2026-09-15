@@ -7,7 +7,13 @@
 #include <QKeyEvent>
 #include <QMainWindow>
 #include <QPainter>
+#include <QString>
 #include <QTimer>
+
+class QPushButton;
+class QSpinBox;
+class QToolButton;
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -30,7 +36,11 @@ class MainWindow : public QMainWindow {
   void handleMove(bool changed);
   void applyMove(GameBoard::Direction direction);
   void onModeChanged(int index);
+  void onAutoToggleClicked();
   void onAutoTurn();
+  void onStepClicked();
+  void onIntervalChanged(int ms);
+  void onLlmSetupClicked();
   void onLlmMove(GameBoard::Direction direction);
   void onLlmWarning(const QString& message);
   Ui::MainWindow* ui;
@@ -39,6 +49,15 @@ class MainWindow : public QMainWindow {
   LlmPlayer m_llm;
   QTimer m_autoTimer;
   QComboBox* m_modeCombo = nullptr;
+  QSpinBox* m_intervalSpin = nullptr;
+  QToolButton* m_intervalUpBtn = nullptr;
+  QToolButton* m_intervalDownBtn = nullptr;
+  QPushButton* m_autoBtn = nullptr;
+  QPushButton* m_stepBtn = nullptr;
+  QPushButton* m_llmSetupBtn = nullptr;
+  QString m_llmUrl;
+  QString m_llmKey;
+  QString m_llmModel;
   Mode m_mode = Mode::Manual;
   bool m_started = false;
 };
