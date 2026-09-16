@@ -35,6 +35,7 @@ double maxTile(const int grid[GameBoard::SIZE][GameBoard::SIZE]) {
   return tileLog(mx);
 }
 }  // namespace
+
 std::optional<GameBoard::Direction> Solver::chooseMove(
     const GameBoard& board) const {
   int current[GameBoard::SIZE][GameBoard::SIZE];

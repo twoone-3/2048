@@ -52,41 +52,42 @@ std::string stripJsonShell(const std::string& text) {
 LlmPlayer::LlmPlayer(QObject* parent)
     : QObject(parent), m_network(new QNetworkAccessManager(this)) {
   // 默认接入智谱 GLM（OpenAI 兼容）；也可在界面里修改
-  m_url = qEnvironmentVariable("LLM_API_URL",
-                               "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+  m_url = qEnvironmentVariable(
+      "LLM_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
   m_apiKey = qEnvironmentVariable("LLM_API_KEY");
-    m_model = qEnvironmentVariable("LLM_MODEL", "glm-4.7-flash");
-  connect(m_network, &QNetworkAccessManager::finished, this,
-          [this](QNetworkReply* reply) {
-            m_requestInFlight = false;
-        const int statusCode = reply->attribute(
-          QNetworkRequest::HttpStatusCodeAttribute).toInt();
+  m_model = qEnvironmentVariable("LLM_MODEL", "glm-4.7-flash");
+  connect(
+      m_network, &QNetworkAccessManager::finished, this,
+      [this](QNetworkReply* reply) {
+        m_requestInFlight = false;
+        const int statusCode =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray responseBody = reply->readAll();
         emit logMessage(QStringLiteral("[%1] HTTP %2\n响应：%3")
-                  .arg(QDateTime::currentDateTime().toString(
-                    QStringLiteral("HH:mm:ss")))
-                  .arg(statusCode > 0 ? QString::number(statusCode)
-                            : QStringLiteral("无"))
-                  .arg(QString::fromUtf8(responseBody)));
-            reply->deleteLater();
-            if (reply->error() != QNetworkReply::NoError) {
-              emit warningShown(
-            QStringLiteral("LLM 请求失败（HTTP %1）：%2")
-              .arg(statusCode > 0 ? QString::number(statusCode)
-                        : QStringLiteral("无"))
-              .arg(reply->errorString()));
-              return;
-            }
-        const std::string content =
-          extractContent(responseBody.toStdString());
-            if (content.empty()) {
-              emit warningShown(
-                  QStringLiteral("LLM 响应中没有可用内容，跳过本回合"));
-              return;
-            }
-            handleReplyText(content);
-          });
+                            .arg(QDateTime::currentDateTime().toString(
+                                QStringLiteral("HH:mm:ss")))
+                            .arg(statusCode > 0 ? QString::number(statusCode)
+                                                : QStringLiteral("无"))
+                            .arg(QString::fromUtf8(responseBody)));
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+          emit warningShown(QStringLiteral("LLM 请求失败（HTTP %1）：%2")
+                                .arg(statusCode > 0
+                                         ? QString::number(statusCode)
+                                         : QStringLiteral("无"))
+                                .arg(reply->errorString()));
+          return;
+        }
+        const std::string content = extractContent(responseBody.toStdString());
+        if (content.empty()) {
+          emit warningShown(
+              QStringLiteral("LLM 响应中没有可用内容，跳过本回合"));
+          return;
+        }
+        handleReplyText(content);
+      });
 }
+
 void LlmPlayer::setConfig(const QString& url, const QString& apiKey,
                           const QString& model) {
   m_url = url.trimmed();

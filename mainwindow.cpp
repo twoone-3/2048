@@ -65,12 +65,10 @@ MainWindow::MainWindow(QWidget* parent)
   m_intervalDownBtn->setText(QStringLiteral("▼"));
   m_intervalDownBtn->setGeometry(254, 116, 20, 17);
   m_intervalDownBtn->setAutoRepeat(true);
-  connect(m_intervalUpBtn, &QToolButton::clicked, this, [this]() {
-    m_intervalSpin->setValue(m_intervalSpin->value() + 50);
-  });
-  connect(m_intervalDownBtn, &QToolButton::clicked, this, [this]() {
-    m_intervalSpin->setValue(m_intervalSpin->value() - 50);
-  });
+  connect(m_intervalUpBtn, &QToolButton::clicked, this,
+          [this]() { m_intervalSpin->setValue(m_intervalSpin->value() + 50); });
+  connect(m_intervalDownBtn, &QToolButton::clicked, this,
+          [this]() { m_intervalSpin->setValue(m_intervalSpin->value() - 50); });
   connect(m_intervalSpin, qOverload<int>(&QSpinBox::valueChanged), this,
           &MainWindow::onIntervalChanged);
   const auto commitInterval = [this]() {
@@ -89,7 +87,7 @@ MainWindow::MainWindow(QWidget* parent)
   m_autoBtn->setGeometry(32, 145, 208, 38);
   m_autoBtn->setEnabled(false);
   connect(m_autoBtn, &QPushButton::clicked, this,
-      &MainWindow::onAutoToggleClicked);
+          &MainWindow::onAutoToggleClicked);
 
   m_stepBtn = new QPushButton(QStringLiteral("单步"), this);
   m_stepBtn->setGeometry(252, 145, 108, 38);
@@ -102,8 +100,8 @@ MainWindow::MainWindow(QWidget* parent)
           &MainWindow::onLlmSetupClicked);
 
   // LLM 接口配置：默认从环境变量读取，可在界面“LLM设置”中修改
-  m_llmUrl = qEnvironmentVariable("LLM_API_URL",
-                                  "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+  m_llmUrl = qEnvironmentVariable(
+      "LLM_API_URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
   m_llmKey = qEnvironmentVariable("LLM_API_KEY");
   m_llmModel = qEnvironmentVariable("LLM_MODEL", "glm-4.7-flash");
   m_llm.setConfig(m_llmUrl, m_llmKey, m_llmModel);
@@ -116,6 +114,7 @@ MainWindow::MainWindow(QWidget* parent)
     update();
     if (m_animationProgress >= 1.0) finishAnimation();
   });
+
   connect(&m_llm, &LlmPlayer::moveReady, this, &MainWindow::onLlmMove);
   connect(&m_llm, &LlmPlayer::warningShown, this, &MainWindow::onLlmWarning);
   m_logEdit = new QPlainTextEdit(this);
@@ -123,10 +122,10 @@ MainWindow::MainWindow(QWidget* parent)
   m_logEdit->setReadOnly(true);
   m_logEdit->setMaximumBlockCount(200);
   m_logEdit->setPlaceholderText(QStringLiteral("LLM 请求日志"));
-  m_logEdit->setStyleSheet(QStringLiteral(
-      "QPlainTextEdit { background: #fffdf9; color: #5b5148;"
-      "border: 1px solid #ddd2c5; border-radius: 8px;"
-      "padding: 6px; font-size: 11px; }"));
+  m_logEdit->setStyleSheet(
+      QStringLiteral("QPlainTextEdit { background: #fffdf9; color: #5b5148;"
+                     "border: 1px solid #ddd2c5; border-radius: 8px;"
+                     "padding: 6px; font-size: 11px; }"));
   connect(&m_llm, &LlmPlayer::logMessage, this, &MainWindow::appendLog);
   // 避免按钮长期占用键盘焦点，保证方向键事件能到达主窗口
   ui->start->setFocusPolicy(Qt::NoFocus);
@@ -143,6 +142,7 @@ void MainWindow::startGame() {
   m_animating = false;
   m_board.reset();
   m_started = true;
+  m_wonShown = false;
   ui->start->setText("重新开始");
   ui->score->setText("score: " + QString::number(m_board.score()));
   if (m_autoBtn && m_mode != Mode::Manual)
@@ -180,23 +180,6 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
   }
   applyMove(direction);
   event->accept();
-}
-
-void MainWindow::handleMove(bool changed) {
-  if (!changed || m_animating) return;
-  ui->score->setText("score: " + QString::number(m_board.score()));
-  if (m_board.hasWon())
-    QMessageBox::information(this, "恭喜！", "你合成了 2048，游戏胜利！");
-  if (m_board.isGameOver()) {
-    QMessageBox::warning(this, "Game Over！", "游戏结束！");
-    m_autoTimer.stop();
-    m_board.reset();
-    m_started = false;
-    ui->start->setText("开始游戏");
-    ui->score->setText("score: 0");
-    if (m_autoBtn) m_autoBtn->setText(QStringLiteral("开始自动解题"));
-  }
-  update();
 }
 
 void MainWindow::applyMove(GameBoard::Direction direction) {
@@ -248,10 +231,10 @@ void MainWindow::applyMove(GameBoard::Direction direction) {
         targetCol = line;
       }
 
-      const bool merges = index + 1 < sources.size() &&
-                          before[sourceRow][sourceCol] ==
-                              before[sources[index + 1].first]
-                                      [sources[index + 1].second];
+      const bool merges =
+          index + 1 < sources.size() &&
+          before[sourceRow][sourceCol] ==
+              before[sources[index + 1].first][sources[index + 1].second];
       m_animationTiles.append({before[sourceRow][sourceCol], sourceRow,
                                sourceCol, targetRow, targetCol, merges});
       if (merges) {
@@ -264,6 +247,15 @@ void MainWindow::applyMove(GameBoard::Direction direction) {
   }
 
   m_newTileRow = m_newTileCol = -1;
+  // 动画期间保持静止的方块也需要绘制，避免闪烁
+  bool movingOrigin[GameBoard::SIZE * GameBoard::SIZE] = {};
+  for (const AnimatedTile& tile : m_animationTiles)
+    movingOrigin[tile.fromRow * GameBoard::SIZE + tile.fromCol] = true;
+  for (int row = 0; row < GameBoard::SIZE; ++row)
+    for (int col = 0; col < GameBoard::SIZE; ++col)
+      if (before[row][col] != 0 && !movingOrigin[row * GameBoard::SIZE + col])
+        m_animationTiles.append({before[row][col], row, col, row, col, false});
+
   for (int row = 0; row < GameBoard::SIZE && m_newTileRow < 0; ++row)
     for (int col = 0; col < GameBoard::SIZE; ++col)
       if (preview[row][col] == 0 && m_animationAfter[row][col] != 0) {
@@ -285,8 +277,10 @@ void MainWindow::finishAnimation() {
   m_animationTimer.stop();
   m_animating = false;
   m_animationProgress = 1.0;
-  if (m_board.hasWon())
+  if (m_board.hasWon() && !m_wonShown) {
+    m_wonShown = true;
     QMessageBox::information(this, "恭喜！", "你合成了 2048，游戏胜利！");
+  }
   if (m_board.isGameOver()) {
     QMessageBox::warning(this, "Game Over！", "游戏结束！");
     m_autoTimer.stop();
@@ -332,10 +326,10 @@ void MainWindow::onAutoToggleClicked() {
   m_autoTimer.setInterval(m_intervalSpin->value());
   m_autoTimer.start();
   m_autoBtn->setText(QStringLiteral("暂停自动解题"));
-  statusBar()->showMessage(
-      m_mode == Mode::Solver ? QStringLiteral("算法模式：自动落子中")
-                             : QStringLiteral("LLM 模式：等待模型返回指令"),
-      2500);
+  statusBar()->showMessage(m_mode == Mode::Solver
+                               ? QStringLiteral("算法模式：自动落子中")
+                               : QStringLiteral("LLM 模式：等待模型返回指令"),
+                           2500);
 }
 
 void MainWindow::onAutoTurn() {
@@ -411,18 +405,42 @@ void MainWindow::drawTile(QPainter& painter, int row, int col, int value,
   if (value == 0 || opacity <= 0.0) return;
   QColor color;
   switch (value) {
-    case 2: color = QColor("#f2d39b"); break;
-    case 4: color = QColor("#ead8b9"); break;
-    case 8: color = QColor("#e9ad72"); break;
-    case 16: color = QColor("#e88b62"); break;
-    case 32: color = QColor("#d96b55"); break;
-    case 64: color = QColor("#c9564c"); break;
-    case 128: color = QColor("#b84b4b"); break;
-    case 256: color = QColor("#9f3f4a"); break;
-    case 512: color = QColor("#813646"); break;
-    case 1024: color = QColor("#5e3d52"); break;
-    case 2048: color = QColor("#432d45"); break;
-    default: color = QColor("#30243a"); break;
+    case 2:
+      color = QColor("#f2d39b");
+      break;
+    case 4:
+      color = QColor("#ead8b9");
+      break;
+    case 8:
+      color = QColor("#e9ad72");
+      break;
+    case 16:
+      color = QColor("#e88b62");
+      break;
+    case 32:
+      color = QColor("#d96b55");
+      break;
+    case 64:
+      color = QColor("#c9564c");
+      break;
+    case 128:
+      color = QColor("#b84b4b");
+      break;
+    case 256:
+      color = QColor("#9f3f4a");
+      break;
+    case 512:
+      color = QColor("#813646");
+      break;
+    case 1024:
+      color = QColor("#5e3d52");
+      break;
+    case 2048:
+      color = QColor("#432d45");
+      break;
+    default:
+      color = QColor("#30243a");
+      break;
   }
   const QRectF cell(32 + 110 * col, 210 + 110 * row, 102, 102);
   const QPointF center = cell.center();
@@ -436,8 +454,7 @@ void MainWindow::drawTile(QPainter& painter, int row, int col, int value,
   painter.drawRoundedRect(tile, 12 * scale, 12 * scale);
   painter.setPen(value > 4 ? Qt::white : QColor("#776e65"));
   painter.setFont(QFont("微软雅黑", value > 512 ? 24 : 28, 700, false));
-  painter.drawText(tile, QString::number(value),
-                   QTextOption(Qt::AlignCenter));
+  painter.drawText(tile, QString::number(value), QTextOption(Qt::AlignCenter));
   painter.restore();
 }
 
@@ -468,9 +485,13 @@ void MainWindow::paintEvent(QPaintEvent* event) {
     const qreal row = tile.fromRow + (tile.toRow - tile.fromRow) * progress;
     const qreal col = tile.fromCol + (tile.toCol - tile.fromCol) * progress;
     painter.save();
-    painter.translate(110 * (col - tile.fromCol),
-                      110 * (row - tile.fromRow));
+    painter.translate(110 * (col - tile.fromCol), 110 * (row - tile.fromRow));
     drawTile(painter, tile.fromRow, tile.fromCol, tile.value);
     painter.restore();
   }
+
+  // 新生成的方块随动画进度从 0 缩放弹出
+  if (m_newTileRow >= 0)
+    drawTile(painter, m_newTileRow, m_newTileCol, m_newTileValue, progress,
+             1.0);
 }

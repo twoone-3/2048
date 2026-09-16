@@ -45,7 +45,6 @@ class MainWindow : public QMainWindow {
     bool merged;
   };
 
-  void handleMove(bool changed);
   void applyMove(GameBoard::Direction direction);
   void onModeChanged(int index);
   void onAutoToggleClicked();
@@ -77,6 +76,7 @@ class MainWindow : public QMainWindow {
   QString m_llmModel;
   Mode m_mode = Mode::Manual;
   bool m_started = false;
+  bool m_wonShown = false;
   QTimer m_animationTimer;
   QElapsedTimer m_animationClock;
   int m_animationBefore[GameBoard::SIZE][GameBoard::SIZE] = {};
